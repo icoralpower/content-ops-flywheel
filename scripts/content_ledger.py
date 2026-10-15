@@ -776,6 +776,93 @@ def cmd_export(args):
         print(f"  ↳ 已同步 Obsidian: {tgt}")
 
 
+# ---------------------------------------------------------------- 回采提醒
+
+def _win_hours(w):
+    m = re.fullmatch(r"\s*(\d+)\s*([hdwm])\s*", str(w).lower())
+    if not m:
+        return None
+    return int(m.group(1)) * {"h": 1, "d": 24, "w": 168, "m": 720}[m.group(2)]
+
+
+def _published_hours_ago(published_at):
+    try:
+        t = datetime.fromisoformat(str(published_at))
+    except (TypeError, ValueError):
+        return None
+    now = datetime.now(t.tzinfo) if t.tzinfo else datetime.now()
+    return (now - t).total_seconds() / 3600.0
+
+
+def cmd_due(args):
+    """列出到点该回采的条目。没有任何待采时**不输出**（cron 看门狗靠空输出静默）。"""
+    datas = [load(args.account)] if args.account else _load_all()
+    if not datas:
+        sys.exit(f"没有找到账号台账（{state_dir()}）。")
+    rows = []
+    for d in datas:
+        plat = d["main_platform"]
+        primary = (PLATFORMS[plat]["metrics"] or list(CANON))[0]
+        for it in d.get("items", []):
+            if not it.get("published_at"):
+                continue
+            el = _published_hours_ago(it["published_at"])
+            if el is None or el < 0:
+                continue
+            wins = []
+            for w in (it.get("collect_windows") or PLATFORMS[plat]["windows"]):
+                h = _win_hours(w)
+                if h is not None:
+                    wins.append((h, w))
+            if not wins:
+                continue
+            wins.sort()
+            base = {
+                "account": d["account"], "id": it["id"], "title": it["title"],
+                "platform": PLATFORMS[plat]["label"], "elapsed_h": round(el, 1),
+                "primary": primary, "primary_label": label(plat, primary),
+                "predicted": (it.get("predicted") or {}).get(primary),
+            }
+            due = [w for h, w in wins if h <= el]
+            if not due:
+                if args.all:
+                    nxt = dict(base, due="", state="未到期",
+                               next_in_h=round(wins[0][0] - el, 1))
+                    rows.append(nxt)
+                continue
+            done_h = _win_hours(it.get("collected_window") or "0h") or 0
+            pend = [w for h, w in wins if h <= el and h > done_h]
+            if not pend:
+                if args.all:
+                    rows.append(dict(base, due="", state="已采"))
+                continue
+            has_actual = (it.get("actual") or {}).get(primary) is not None
+            rows.append(dict(base, due=pend[0], also_due=pend[1:],
+                             state="补采" if has_actual else "首采"))
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+    todo = [r for r in rows if r["due"]]
+    if not todo:
+        if args.all:
+            for r in rows:
+                tail = (f"还有 {r['next_in_h']:.0f}h 到期" if r["state"] == "未到期"
+                        else "已回采")
+                print(f"  {r['platform']} {r['account']} #{r['id']}「{r['title']}」"
+                      f" {r['state']}（{tail}）")
+            if not rows:
+                print("没有已登记的发布记录。")
+        return
+    print(f"待回采 {len(todo)} 条 · {now_iso()}")
+    for r in todo:
+        extra = f"，另有 {'/'.join(r['also_due'])} 已到期未采" if r["also_due"] else ""
+        print(f"  {r['platform']} {r['account']} #{r['id']}「{r['title']}」"
+              f" 已发布 {r['elapsed_h']:.0f}h → 应采 {r['due']} 窗口（{r['state']}{extra}）")
+        print(f"    content-ledger collect {r['account']} --id {r['id']} "
+              f"--window {r['due']} --metric '{r['primary']}=<平台后台实际值>'")
+    print("  ※ 数字从平台后台抄录，勿估算——自动抓数会让校准失去可信度。")
+
+
 # ---------------------------------------------------------------- 账号矩阵
 
 def _load_all():
@@ -1142,6 +1229,12 @@ def build_parser():
     p = sub.add_parser("export", help="导出 Markdown 台账 / 同步 Obsidian")
     p.add_argument("account")
     p.set_defaults(fn=cmd_export)
+
+    p = sub.add_parser("due", help="列出到点该回采的条目（无待采则静默，供 cron 看门狗）")
+    p.add_argument("account", nargs="?", default="")
+    p.add_argument("--all", action="store_true", help="连未到期/已采的也列出")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_due)
 
     p = sub.add_parser("matrix", help="账号矩阵总览（跨账号对比/支柱矩阵/复用候选）")
     p.add_argument("--threshold", type=float, default=1.0,

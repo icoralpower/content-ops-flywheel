@@ -121,12 +121,47 @@ content-ops-flywheel: calibrate → 反哺 topic-direction-analysis 的评估维
 - 维度加到 >10 个（每维样本被稀释，谁都测不准）
 - 用"感觉这条会火"替代 `--note` 里的**可验证依据**（对标数据/上次同题表现/评论区问题）
 
+## 回采节奏与提醒（★ 已记录，待启用）
+
+飞轮靠"到点回采"驱动，人肉记 T+24h 必漏。约定节奏：
+
+| 时点 | 动作 | 命令 |
+|---|---|---|
+| 发布当时 | 登记 + 确认采集窗口 | `publish --id N --windows 24h,7d` |
+| T+24h | 回采主指标（多数平台流量已出 70-90%） | `collect --id N --metric 播放=... --top-comments "..."` |
+| 第 7 天 | 补长尾（小红书/B站/公众号长尾占比高） | `collect --id N --window 7d` |
+| 每周固定一天 | 跑偏差 + 清复盘积压 | `report <账号>` → 逐条 `review` |
+
+**随时手动查**：`content-ledger due` —— 列出所有到点该回采的条目，并直接给出可复制的 collect 命令；**没有待采就一声不响**。`due --all` 连未到期/已采的一起列，`due --json` 给程序消费。
+
+**自动提醒：当前未启用**（等账号跑起来、有真实发布记录后再开）。做成**零 token 看门狗**：
+
+```bash
+# 1) 看门狗放进 cron 能读的目录（必须在 ~/.hermes/scripts/ 下）
+cp ~/.config/skillshare/skills/content-ops-flywheel/scripts/due_collect.py ~/.hermes/scripts/
+
+# 2) 每天 10:00 检查；--no-agent = 不调模型不花 token，脚本输出直接推送
+hermes cron create "0 10 * * *" \
+  --name "内容台账·回采提醒" \
+  --no-agent --script due_collect.py --deliver local
+```
+
+语法要点：`hermes cron create <schedule> [prompt]`，`--name / --script / --deliver` 都是选项——**别写 `hermes cron add "<名字>" --schedule ... --prompt ...`**，那两个选项不存在，会直接报错。
+`due_collect.py` 自己找引擎：本目录 → `CONTENT_OPS_ENGINE` → PATH 上的 `content-ledger` → skill 安装位，所以拷到 `~/.hermes/scripts/` 照样跑。
+空输出 = 不推送。看门狗的正确姿态：没事别吵。
+
+两条硬规矩：
+1. 提醒只报"该采哪几条"，**实际数字必须本人从平台后台抄**——自动抓数会让台账失去可信度（数据来源不干净，校准就是自欺）。
+2. 提醒不发就当没发过：漏采一天，那条记录的 24h 窗口就永久废了，只能标 `--window 7d` 降级使用。
+
 ## 文件
 
-- `scripts/content_ledger.py` —— 单文件零依赖台账引擎（Python 3.8+）
+- `scripts/content_ledger.py` —— 单文件零依赖台账引擎（Python 3.8+）；子命令 init/predict/publish/collect/report/review/calibrate/list/export/**due**/**matrix**
+- `scripts/due_collect.py` —— 回采看门狗，供 `hermes cron --no-agent --script` 调用
 - `references/rubric-cn.md` —— 七维评分卡中文版：评级锚点、平台微调、升级流程
 - `references/platform-metrics.md` —— 各平台指标口径 + 采集窗口 + 别名表
-- `tests/test_unit.py`、`tests/acceptance.sh` —— 单元测试 + 全链路验收
+- `tests/test_unit.py` / `acceptance.sh` / `matrix.sh` / `due.sh` —— 单元 + 全链路 + 矩阵 + 回采断言（全为可失败断言式）
+- `README.md` / `install.sh` —— 项目说明与安装脚本
 
 ## 来源与授权
 

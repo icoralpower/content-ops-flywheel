@@ -27,8 +27,13 @@ chmod +x scripts/content_ledger.py
 python3 scripts/content_ledger.py --help
 ```
 
-作为 skill 使用：仓库根目录即 skill 目录（`SKILL.md` + `scripts/` + `references/`），已通过 skillshare 安装到
-`~/.config/skillshare/skills/marketing/content-ops-flywheel/` 并同步到 Hermes / Codex / OpenClaw / OpenCode。
+作为 skill 使用：仓库根目录即 skill 目录（`SKILL.md` + `scripts/` + `references/`）。已登记到 skillshare 并同步至 Hermes / Codex / OpenClaw / OpenCode：
+
+```bash
+bash install.sh        # skillshare install --force 登记 + sync + 建 content-ledger 软链
+```
+
+⚠️ 手动把目录 `cp` 进 `~/.config/skillshare/skills/` **不会被登记**，`sync` 也不会链接到各端——必须走 `install.sh`（或 `skillshare install <路径> --force`）。
 
 ## 命令速查
 
@@ -45,6 +50,7 @@ $L calibrate <账号>          # 秩相关 + 分档 + 失效维度检测
 $L list    <账号>
 $L export  <账号>            # 导出 Markdown + 同步 Obsidian
 $L matrix  [--csv out.csv]   # 账号矩阵总览 + 支柱矩阵 + 跨账号复用候选
+$L due     [--all] [--json]  # 到点该回采的条目（无待采则静默，供 cron 看门狗）
 ```
 
 环境变量：
@@ -60,14 +66,17 @@ $L matrix  [--csv out.csv]   # 账号矩阵总览 + 支柱矩阵 + 跨账号复�
 content-ops-flywheel/
 ├── SKILL.md                      # 八步飞轮 + 硬约束 + 接驳现有流程
 ├── README.md
-├── scripts/content_ledger.py     # 引擎（单文件，零依赖）
+├── scripts/
+│   ├── content_ledger.py         # 引擎（单文件，零依赖）
+│   └── due_collect.py            # 回采看门狗（cron --no-agent --script）
 ├── references/
 │   ├── rubric-cn.md              # 七维评分卡中文版 + 评级锚点 + 升级流程
 │   └── platform-metrics.md       # 平台口径 / 采集窗口 / 别名表
 └── tests/
     ├── test_unit.py              # 解析·判定·秩相关·指纹（含边界）
     ├── acceptance.sh             # 全链路验收（含错误路径必须报错）
-    └── matrix.sh                 # 账号矩阵验收
+    ├── matrix.sh                 # 账号矩阵验收
+    └── due.sh                    # 回采提醒验收（含看门狗静默验证）
 ```
 
 ## 设计原则
@@ -96,7 +105,22 @@ $CONTENT_OPS_HOME/
 python3 tests/test_unit.py     # 单元
 bash tests/acceptance.sh       # 全链路（含错误路径）
 bash tests/matrix.sh           # 矩阵
+bash tests/due.sh              # 回采提醒（含看门狗静默验证）
 ```
+
+## 回采提醒（看门狗）
+
+`content-ledger due` 列出到点该回采的条目，并直接给出可复制的 `collect` 命令；**没有待采时零输出**。`due --all` 连未到期/已采的一起列，`due --json` 给程序消费。
+
+自动化（**当前未启用**，等有真实发布记录后再开）：
+
+```bash
+cp scripts/due_collect.py ~/.hermes/scripts/
+hermes cron create "0 10 * * *" --name "内容台账·回采提醒" \
+  --no-agent --script due_collect.py --deliver local
+```
+
+`--no-agent` 不调模型、不花 token，脚本有输出才推送。数字必须从平台后台人肉抄录——自动抓数会让校准失去可信度。
 
 ## 来源与授权
 
