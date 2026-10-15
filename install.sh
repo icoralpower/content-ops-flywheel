@@ -15,7 +15,7 @@ if ! command -v skillshare >/dev/null 2>&1; then
   exit 1
 fi
 
-chmod +x "$SRC/scripts/content_ledger.py" "$SRC/tests/"*.sh 2>/dev/null || true
+chmod +x "$SRC/scripts/content_ledger.py" "$SRC/scripts/topic_scorer.py" "$SRC/tests/"*.sh 2>/dev/null || true
 
 echo "▸ 登记/更新 $SRC"
 skillshare install "$SRC" --force -y
@@ -38,6 +38,7 @@ done
 # 让脚本能作为命令直接调用（~/.local/bin 通常已在 PATH）
 mkdir -p "$HOME/.local/bin"
 ln -sf "$SRC/scripts/content_ledger.py" "$HOME/.local/bin/content-ledger"
+ln -sf "$SRC/scripts/topic_scorer.py" "$HOME/.local/bin/topic-scorer"
 echo
-echo "✓ 完成。命令: content-ledger --help"
+echo "✓ 完成。命令: content-ledger --help / topic-scorer --help"
 echo "  重新导出后记得跑一次 tests: bash tests/acceptance.sh && bash tests/matrix.sh"

@@ -29,7 +29,7 @@ metadata:
 | 步 | 动作 | 产出 | 命令 |
 |---|---|---|---|
 | 1 | 账号档案 + 评分卡 | `account.md` | `init` |
-| 2 | 候选池（≥10 条待拍） | 选题池 | （用 `topic-direction-analysis`） |
+| 2 | 候选池（≥10 条待拍）→ **打分/去重/排序** | `ranked.json` + Top5 平台清单 | `topic_scorer` |
 | 3 | 写稿 | 脚本 | （用 `short-video-script`） |
 | 4 | **发布前打分 + 锁预测** | 预测记录 + 指纹 | `predict` |
 | 5 | 登记发布 | URL + 采集窗口 | `publish` |
@@ -86,6 +86,22 @@ python3 $L export aijike-xhs
 环境变量：
 - `CONTENT_OPS_HOME`（默认 `~/内容运营台账`）——台账数据根目录，**绝对路径，不随 cwd 漂移**
 - `CONTENT_OPS_OBSIDIAN`（默认 `~/Documents/Obsidian Vault/资料库/内容运营`）——复盘 Markdown 自动镜像到这里
+
+### 第 2 步：候选池打分（去重 / 排序 / 分平台）
+
+```bash
+S=~/dev/content-ops-flywheel/scripts/topic_scorer.py
+
+# 多源候选池（同一事件会有多个标题/链接）→ Top5 + 每条该发哪些平台
+python3 $S --input pool.json --out ranked.json --top 5 --print-summary
+```
+
+- HKR 三维各 1~5（H 有趣/反转、K 信息量/数据、R 共鸣/争议），合成分 `(H+K+R)/15×10`，**< 6.0 淘汰**。
+- 三级去重：URL 归一化（摘 `utm_*`/`fbclid`/`spm`）→ 标题相似度 ≥0.6 → 实体词重合 ≥0.6（除以较小集合 + 停用词过滤）。
+- 同垂类在 Top5 里最多 2 条；破例补位的条目带 `backfilled` 标记，**违规可见**。
+- 平台分级：Top1 → 公众号/小红书/抖音/X 四路，Top2-3 → 两路，Top4-5 → 一路。
+- 每条结果带 `dedup_layer`（L1_URL/L2_TITLE/L3_ENTITY）+ `merged_from` + `aliases`，为什么算一条可追溯。
+- 口径、阈值调法、HKR 打分锚点、陷阱 → `references/topic-scoring.md`。
 
 ## 接驳你现有的内容流程
 
@@ -157,12 +173,16 @@ hermes cron create "0 10 * * *" \
 ## 文件
 
 - `scripts/content_ledger.py` —— 单文件零依赖台账引擎（Python 3.8+）；子命令 init/predict/publish/collect/report/review/calibrate/list/export/**due**/**matrix**
+- `scripts/topic_scorer.py` —— 单文件零依赖选题打分器（Python 3.8+）：HKR 折算 + 三级去重 + 垂类多样性 + 平台分级；纯确定性，无随机/无联网
 - `scripts/due_collect.py` —— 回采看门狗，供 `hermes cron --no-agent --script` 调用
 - `references/rubric-cn.md` —— 七维评分卡中文版：评级锚点、平台微调、升级流程
 - `references/platform-metrics.md` —— 各平台指标口径 + 采集窗口 + 别名表
-- `tests/test_unit.py` / `acceptance.sh` / `matrix.sh` / `due.sh` —— 单元 + 全链路 + 矩阵 + 回采断言（全为可失败断言式）
+- `references/topic-scoring.md` —— 选题打分：来源与授权、五个零件落点、阈值调法、HKR 锚点、陷阱
+- `tests/test_unit.py` / `test_topic_scorer.py` / `acceptance.sh` / `matrix.sh` / `due.sh` —— 单元（台账 + 打分）+ 全链路 + 矩阵 + 回采断言（全为可失败断言式）
 - `README.md` / `install.sh` —— 项目说明与安装脚本
 
 ## 来源与授权
 
 方法论借鉴 `bianzigege/mcn-content-ops`（辫子哥哥，八步飞轮 + 七维评分卡 + 反幻觉机制）。该仓库**未附许可证**（默认保留所有权利），故本 skill **不复制其代码或文字**，仅采用"方法/流程"层面的思想并全部重写实现（著作权不保护方法本身）。表格中的六项坑为实测复现结果，用于说明本实现为何不同。
+
+选题打分（`scripts/topic_scorer.py`）的方法来源为 `lijinhongucl-pixel/content-orchestrator-lite`——**同样未附许可证**，处理方式相同：只取 HKR 模型、三级去重、垂类多样性、平台分级这四层**方法与口径**，代码全部新写。上游实测存在 10 处 `/home/gem` 硬编码、skill 路径写错、7 个依赖未随仓交付，故不引入其源码；其中 `event_bus.py`（事件总线）与 `pipeline_state.py`（检查点续跑）虽可运行但上游自身零引用，暂不采纳。
