@@ -843,24 +843,30 @@ def cmd_due(args):
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return
     todo = [r for r in rows if r["due"]]
-    if not todo:
-        if args.all:
-            for r in rows:
+    rest = [r for r in rows if not r["due"]]
+    if not todo and not args.all:
+        return  # 看门狗模式：无待采 → 零输出
+    if todo:
+        print(f"待回采 {len(todo)} 条 · {now_iso()}")
+        for r in todo:
+            extra = f"，另有 {'/'.join(r['also_due'])} 已到期未采" if r["also_due"] else ""
+            print(f"  {r['platform']} {r['account']} #{r['id']}「{r['title']}」"
+                  f" 已发布 {r['elapsed_h']:.0f}h → 应采 {r['due']} 窗口（{r['state']}{extra}）")
+            print(f"    content-ledger collect {r['account']} --id {r['id']} "
+                  f"--window {r['due']} --metric '{r['primary']}=<平台后台实际值>'")
+        print("  ※ 数字从平台后台抄录，勿估算——自动抓数会让校准失去可信度。")
+    elif args.all:
+        print(f"暂无待回采 · {now_iso()}")
+    if args.all:
+        if rest:
+            print(f"其余 {len(rest)} 条：")
+            for r in rest:
                 tail = (f"还有 {r['next_in_h']:.0f}h 到期" if r["state"] == "未到期"
                         else "已回采")
                 print(f"  {r['platform']} {r['account']} #{r['id']}「{r['title']}」"
                       f" {r['state']}（{tail}）")
-            if not rows:
-                print("没有已登记的发布记录。")
-        return
-    print(f"待回采 {len(todo)} 条 · {now_iso()}")
-    for r in todo:
-        extra = f"，另有 {'/'.join(r['also_due'])} 已到期未采" if r["also_due"] else ""
-        print(f"  {r['platform']} {r['account']} #{r['id']}「{r['title']}」"
-              f" 已发布 {r['elapsed_h']:.0f}h → 应采 {r['due']} 窗口（{r['state']}{extra}）")
-        print(f"    content-ledger collect {r['account']} --id {r['id']} "
-              f"--window {r['due']} --metric '{r['primary']}=<平台后台实际值>'")
-    print("  ※ 数字从平台后台抄录，勿估算——自动抓数会让校准失去可信度。")
+        if not rows:
+            print("没有已登记的发布记录。")
 
 
 # ---------------------------------------------------------------- 账号矩阵
